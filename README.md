@@ -1,4 +1,4 @@
-# 🌌 Planetarium Server
+# 🌌 Planetarium
 
 [![Project Status: Planning](https://shields.io)](https://repostatus.org)
 [![License: MIT](https://shields.io)](LICENSE)
