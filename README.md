@@ -1,10 +1,5 @@
 # 🌌 Planetarium
 
-[![Project Status: Planning](https://shields.io)](https://repostatus.org)
-[![License: MIT](https://shields.io)](LICENSE)
-[![Backend: Go](https://shields.io)](https://go.dev)
-[![Frontend: React](https://shields.io)](https://react.dev)
-
 **Planetarium Server** — це гейміфікована освітня платформа для студентів та всіх, хто прагне структурувати свій процес навчання. Проект дозволяє користувачам будувати індивідуальні освітні траєкторії, візуалізувати свій прогрес у вигляді інтерактивних графів (дерев навичок) та підтверджувати знання за допомогою автоматичної AI-перевірки.
 
 ---
