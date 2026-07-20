@@ -1,48 +1,48 @@
-# 🌌 Planetarium
+# Planetarium
 
-**Planetarium Server** — це гейміфікована освітня платформа для студентів та всіх, хто прагне структурувати свій процес навчання. Проект дозволяє користувачам будувати індивідуальні освітні траєкторії, візуалізувати свій прогрес у вигляді інтерактивних графів (дерев навичок) та підтверджувати знання за допомогою автоматичної AI-перевірки.
-
----
-
-## 📌 Поточний статус: Етап планування (Planning Phase)
-Проект знаходиться на стадії активного проектування архітектури, розробки технічної документації та формування початкового репозиторію. **Розробка коду ще не розпочалася.** Це найкращий момент, щоб долучитися до обговорення архітектурних паттернів бекенду на Go та структури компонентів на React.
+**Planetarium Server** is a gamified educational platform designed for students and lifelong learners who want to structure their education. The platform enables users to build customized learning paths, visualize their progress through interactive node graphs (Skill Trees), and validate their knowledge using automated AI-powered testing.
 
 ---
 
-## 🛠 Технологічний стек (Tech Stack)
+## Project Status: Planning Phase
+The project is currently in the active architecture design, technical documentation drafting, and initial repository setup phase. **Core code development has not yet begun.** This is the ideal time to contribute to backend architecture discussions in Go and frontend component structures in React.
+
+---
+
+## Proposed Tech Stack
 
 ### Backend
-*   **Мова:** Go (Golang) — для забезпечення високої продуктивності, конкурентності та швидкої обробки запитів.
-*   **Інтеграції:** OpenAI API (для генерації та оцінювання тестів).
+*   **Language:** Go (Golang) — selected for high performance, native concurrency, and fast request processing.
+*   **Integrations:** OpenAI API (for generating and evaluating knowledge tests).
 
 ### Frontend
-*   **Бібліотека:** React (TypeScript) — для створення динамічного та чуйного інтерфейсу.
-*   **Візуалізація:** Планується використання бібліотек для роботи з графами (наприклад, React Flow або Vis.js) для реалізації конструктора та дерева навичок.
+*   **Library:** React (TypeScript) — for building a dynamic, responsive, and type-safe user interface.
+*   **Visualization:** Graph rendering libraries (e.g., React Flow or Vis.js) will be evaluated for the roadmap builder and skill tree features.
 
 ---
 
-## 🗺 Функціональність та Пріоритети (Features & Roadmap)
+## Features & Roadmap
 
-Ми розділили розробку на три рівні пріоритетності: **P0 (MVP/Критично)**, **P1 (Важливо)** та **P2 (Пізніше)**.
+Development is split into three priority levels: **P0 (MVP / Critical)**, **P1 (Important)**, and **P2 (Future / Post-MVP)**.
 
-### 🛑 P0 — Мінімально життєздатний продукт (MVP)
-1.  **Автентифікація:** Реєстрація та вхід через Email/Пароль, а також швидкий вхід через OAuth (Google / GitHub). Наявність гостьового режиму для ознайомлення.
-2.  **Каталог роадмапів:** Пошук та фільтрація готових шляхів за категоріями (*Програмування, Дизайн, Мови, Наука, Хобі*), складністю та тривалістю.
-3.  **Проходження роадмапу:** Візуальний граф вузлів зі статусами (*Not started → In progress → Completed*) та автоматичним збереженням прогресу.
-4.  **AI-перевірка знань:** Генерація тестів через OpenAI за темою вузла. Включає захист від «фарму» (кулдауни, обмеження спроб) та розгорнутий фідбек щодо помилок.
+### P0 — Minimum Viable Product (MVP)
+1.  **Authentication:** Sign up and log in via Email/Password, alongside OAuth integrations (Google / GitHub). A guest mode is available for quick browsing.
+2.  **Roadmap Catalog:** Search and filter ready-made learning paths by category (*Programming, Design, Languages, Science, Hobbies*), difficulty, and duration.
+3.  **Roadmap Tracking:** Interactive visual graphs representing nodes with distinct statuses (*Not started → In progress → Completed*) and automatic progress saving.
+4.  **AI-Powered Knowledge Check:** On-demand quiz generation via OpenAI for specific nodes. Includes anti-farming protection (cooldowns, attempt limits) and detailed feedback on mistakes.
 
-### 🟡 P1 — Наступний етап розширення
-5.  **Конструктор роадмапів:** Інтерактивне Drag-and-drop полотно для створення власних освітніх шляхів з нуля або за допомогою AI-асистента.
-6.  **Дерево навичок (Skill Tree):** Гейміфікована мапа скілів із візуальними станами (*locked, available, unlocked, mastered*) та нарахуванням очок навичок.
-7.  **Профіль користувача:** Особистий кабінет із статистикою, історією тестів та системою streak (серія днів навчання) і бейджів.
+### P1 — Core Extensions
+5.  **Custom Roadmap Builder:** A drag-and-drop canvas to create educational paths from scratch or with the help of an AI assistant. Supports path cloning and forking.
+6.  **Skill Tree:** A gamified skill map with visual node states (*locked, available, unlocked, mastered*) where users earn skill points for completed tests.
+7.  **User Profile:** A personal dashboard tracking active roadmaps, stats, learning streaks, and milestone achievements/badges.
 
-### 🟢 P2 — Спільнота та масштабування
-8.  **Спільнота та обмін:** Можливість публікувати власні роадмапи в загальний каталог, ставити лайки, залишати коментарі, підписуватися на авторів та клонувати чужі карти.
+### P2 — Community & Scaling
+8.  **Community & Sharing:** Sharing custom roadmaps to the public catalog, including likes, ratings, comments, author subscriptions, and copying external paths.
 
 ---
 
-## 🧬 Архітектурна візія
+## Architectural Vision
 
-*   **Чиста архітектура (Clean/Hexagonal Architecture) на backend:** чіткий розподіл на шари (Domain, Usecase, Repository, Delivery) для полегшення тестування та заміни інфраструктурних елементів.
-*   **RESTful API:** стандартизована взаємодія між Go-сервером та React-клієнтом.
-*   **Компонентний підхід на frontend:** декларативний та модульний UI для забезпечення масштабованості конструктора роадмапів.
+*   **Clean/Hexagonal Architecture (Backend):** Decoupled layers (Domain, Usecase, Repository, Delivery) to guarantee testability and infrastructure flexibility.
+*   **RESTful API:** Standardized contract-first communication between the Go server and the React client.
+*   **Component-Driven UI (Frontend):** Modular and declarative frontend components to ensure scalable rendering of interactive roadmaps.
