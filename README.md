@@ -1,6 +1,6 @@
 # Planetarium
 
-**Planetarium Server** is a gamified educational platform designed for students and lifelong learners who want to structure their education. The platform enables users to build customized learning paths, visualize their progress through interactive node graphs (Skill Trees), and validate their knowledge using automated AI-powered testing.
+**Planetarium** is a gamified educational platform designed for students and lifelong learners who want to structure their education. The platform enables users to build customized learning paths, visualize their progress through interactive node graphs (Skill Trees), and validate their knowledge using automated AI-powered testing.
 
 ---
 
