@@ -1,4 +1,4 @@
-# Contributing to Planetarium Server
+# Contributing to Planetarium
 
 First off, thank you for taking the time to contribute!
 
