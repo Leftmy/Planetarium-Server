@@ -53,7 +53,7 @@ Development is split into three priority levels: **P0 (MVP / Critical)**, **P1 (
 
 You can run the backend server either using Docker (recommended) or locally if you have the Go toolchain installed.
 
-### 📋 Prerequisites & Environment Variables
+### Prerequisites & Environment Variables
 Before running the application, create a `.env` file in the root directory and specify your configuration:
 ```env
 PORT=8080
