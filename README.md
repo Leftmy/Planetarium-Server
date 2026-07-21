@@ -96,6 +96,6 @@ If you prefer to run and develop the project directly on your machine without Do
 ---
 
 ## Contacts & Communication
-*   **Project Owner / Product Owner:** [Your Name / Nickname]
+*   **Project Owner / Product Owner:** [@l9mato]
 *   **Contact Email:** [Your Email Address]
 *   **Project Chat:** [@l9mato]
