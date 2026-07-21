@@ -1,9 +1,5 @@
 # Planetarium
 
-[![Backend: Go](https://go.dev)
-[![Frontend: React](https://react.dev)
-[![Docker: Supported](https://docker.com)
-
 **Planetarium** is a gamified educational platform designed for students and lifelong learners who want to structure their education. The platform enables users to build customized learning paths, visualize their progress through interactive node graphs (Skill Trees), and validate their knowledge using automated AI-powered testing.
 
 ---
