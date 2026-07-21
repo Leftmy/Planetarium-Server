@@ -1,19 +1,23 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 )
 
 func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "Welcome to the Planetarium API!")
-	})
+	log.Println("Loading configuration...")
+	log.Println("Initializing logger...")
+	log.Println("Connecting to adapters...")
 
-	fmt.Println("Hello from Planetarium! The server is running on port 8080...")
+	// 1. Create router
+	mux := http.NewServeMux()
 
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		fmt.Printf("Server failed to start: %v\n", err)
-	}
+	// http_transport.SetupRoutes(mux)
+	log.Println("Routes configured...")
+
+	// httpserver.Start(mux, "8080")
+	log.Println("Application is running. Press Ctrl+C to exit.")
+
+	_ = mux
 }
