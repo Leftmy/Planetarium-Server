@@ -1,8 +1,8 @@
 # Planetarium
 
-[![Backend: Go](https://shields.io)](https://go.dev)
-[![Frontend: React](https://shields.io)](https://react.dev)
-[![Docker: Supported](https://shields.io)](https://docker.com)
+[![Backend: Go](https://go.dev)
+[![Frontend: React](https://react.dev)
+[![Docker: Supported](https://docker.com)
 
 **Planetarium** is a gamified educational platform designed for students and lifelong learners who want to structure their education. The platform enables users to build customized learning paths, visualize their progress through interactive node graphs (Skill Trees), and validate their knowledge using automated AI-powered testing.
 
