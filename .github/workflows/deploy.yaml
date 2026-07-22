@@ -1,0 +1,42 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  deploy:
+    name: Deploy Service
+    runs-on: ubuntu-latest
+
+    needs: [ test ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go (Optional for static binary build)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Build Binary (Placeholder)
+        run: |
+          echo "Building Go binary..."
+          # CGO_ENABLED=0 GOOS=linux go build -o app ./cmd/main.go
+
+      - name: Build & Push Docker Image (Placeholder)
+        run: |
+          echo "Building Docker image..."
+          # docker build -t my-registry/go-app:${{ github.sha }} .
+          # docker push my-registry/go-app:${{ github.sha }}
+
+      - name: Deploy to Remote Host / K8s (Placeholder)
+        env:
+          # SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          # HOST: ${{ secrets.SERVER_HOST }}
+          # USER: ${{ secrets.SERVER_USER }}
+        run: |
+          echo "Deploying application to production server..."
+          # ssh user@host "docker pull ... && docker stop ... && docker run ..."
