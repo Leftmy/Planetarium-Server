@@ -1,13 +1,16 @@
 package config
 
-// Config holds all application configurations (DB, API keys, etc.)
+import (
+	"github.com/leftmy/planetarium-server/internal/adapter/postgres"
+)
+
+// Config - this is the general config of application
 type Config struct {
-	Port        string
-	DatabaseURL string
+	AppPort  string          `env:"APP_PORT"`
+	Postgres postgres.Config // Import adapter's config
 }
 
-// Load reads environment variables and populates the Config struct
-func Load() (*Config, error) {
-	// Logic to load .env or environment variables will go here
-	return &Config{}, nil
+func InitConfig() (Config, error) {
+	// there will be parsing and validation of config
+	return Config{}, nil
 }
