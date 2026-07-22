@@ -1,42 +1,59 @@
-name: Deploy
+name: CI/CD
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  deploy:
-    name: Deploy Service
+  test:
+    name: Test
     runs-on: ubuntu-latest
-
-    needs: [ test ]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go (Optional for static binary build)
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Build Binary (Placeholder)
-        run: |
-          echo "Building Go binary..."
-          # CGO_ENABLED=0 GOOS=linux go build -o app ./cmd/main.go
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
 
-      - name: Build & Push Docker Image (Placeholder)
-        run: |
-          echo "Building Docker image..."
-          # docker build -t my-registry/go-app:${{ github.sha }} .
-          # docker push my-registry/go-app:${{ github.sha }}
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [ lint, test ]
 
-      - name: Deploy to Remote Host / K8s (Placeholder)
-        env:
-          # SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-          # HOST: ${{ secrets.SERVER_HOST }}
-          # USER: ${{ secrets.SERVER_USER }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Build binary
         run: |
-          echo "Deploying application to production server..."
-          # ssh user@host "docker pull ... && docker stop ... && docker run ..."
+          CGO_ENABLED=0 GOOS=linux go build -o planetarium-app ./cmd/api/main.go
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [ lint, test, build ]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy placeholder
+        run: |
+          echo "Deploying application to production..."
+          echo "Add your real deployment steps here when the environment is ready."
