@@ -6,9 +6,9 @@ import (
 )
 
 func main() {
-	log.Println("Loading configuration...")
-	log.Println("Initializing logger...")
-	log.Println("Connecting to adapters...")
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, "Welcome to the Planetarium API!")
+	})
 
 	// 1. Create router
 	mux := http.NewServeMux()
