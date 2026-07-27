@@ -28,7 +28,10 @@ func (h *Handler) HTTPv1(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+
+	defer func() {
+		_ = r.Body.Close()
+	}()
 
 	resp, err := h.usecase.Register(r.Context(), req)
 	if err != nil {
@@ -40,5 +43,6 @@ func (h *Handler) HTTPv1(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+
+	_ = json.NewEncoder(w).Encode(resp)
 }
