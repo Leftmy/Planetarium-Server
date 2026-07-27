@@ -7,7 +7,7 @@ import (
 
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "Welcome to the Planetarium API!")
+		_, _ = fmt.Fprint(w, "Welcome to the Planetarium API!")
 	})
 
 	fmt.Println("Hello from Planetarium! The server is running on port 8080...")
