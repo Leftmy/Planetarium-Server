@@ -11,15 +11,22 @@ The repository is still in an early stage. The current implementation is a minim
 - Language: Go 1.26.5
 - Runtime: standard library HTTP server for the current MVP skeleton
 - Containerization: Docker and Docker Compose
+- Database: PostgreSQL 16+ (citext, pg_trgm); migrations with goose, driver pgx v5
 - CI/CD: GitHub Actions workflow scaffold
 
 ## Repository layout
 
 - cmd/api/main.go — application entrypoint
+- cmd/migrate/main.go — migration runner, a separate binary from the API
+- internal/ — vertical slices (user/register, user/login), domain, adapters, transport
+- pkg/ — shared helpers: httpserver, logger, render
+- config/ — application configuration, composed from adapter configs
+- migrations/ — goose SQL migrations, embedded via embed.FS
+- docs/ — DB schema (db-schema.md), its review, and the dbml diagram
 - go.mod — Go module definition and version
 - Dockerfile — container build for the API
-- docker-compose.yml — local container orchestration
-- .github/workflows/deploy.yaml — deployment workflow placeholder
+- docker-compose.yml — local orchestration: API plus PostgreSQL 16
+- .github/workflows/pipeline.yaml — lint, test, build; deploy step is a placeholder
 - README.md — product overview and run instructions
 - CONTRIBUTING.md — contribution and workflow guidance
 
@@ -49,10 +56,19 @@ Run tests:
 go test ./...
 ```
 
-Run with Docker:
+Run with Docker (starts PostgreSQL and waits for it to become healthy):
 
 ```bash
 docker compose up --build
+```
+
+Apply migrations (a separate step on purpose — several API replicas starting at
+once must not race to migrate the same database):
+
+```bash
+go run ./cmd/migrate up
+go run ./cmd/migrate status
+go run ./cmd/migrate down
 ```
 
 Build the container manually:
@@ -72,17 +88,26 @@ docker build -t planetarium-server .
 
 ## Environment and configuration
 
-The README references environment variables such as:
+`.env.example` is the source of truth for what the code actually reads: `APP_PORT`
+and `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_NAME`. The README still
+mentions `PORT`, `DATABASE_URL` and `OPENAI_API_KEY` — the first two are outdated
+names and the third is not wired up yet.
 
-- PORT
-- OPENAI_API_KEY
-- DATABASE_URL
+Under docker compose the API reaches the database as host `db`; `.env.example`
+keeps `localhost` because that is the correct value when running the API on the
+host with `go run`.
+
+`config.InitConfig` does not parse the environment yet — it returns a zero
+`Config`. Until it does, entrypoints read the variables directly; `cmd/api` keeps
+the port as a constant rather than taking an empty string from config.
 
 If you add configuration behavior, keep it documented and avoid introducing hard-coded secrets.
 
 ## CI/CD notes
 
-The deployment workflow in .github/workflows/deploy.yaml is currently a placeholder. Do not assume production deployment is already wired up.
+The workflow lives in .github/workflows/pipeline.yaml and runs lint, test and build.
+Its final `deploy` job is still an `echo` placeholder — do not assume production
+deployment is wired up.
 
 If you modify deployment automation:
 

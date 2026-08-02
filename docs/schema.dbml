@@ -1,4 +1,4 @@
-// Planetarium — схема БД v1.1
+// Planetarium — схема БД v1.2
 // Візуалізація: https://dbdiagram.io/d — вставити цей файл цілком.
 // Джерело правди: docs/db-schema.md
 
@@ -11,7 +11,7 @@ Project planetarium {
 
 Table users {
   id uuid [pk, note: 'UUIDv7']
-  email citext [not null, unique]
+  email citext [not null, note: 'UNIQUE частковий: WHERE deleted_at IS NULL']
   email_verified_at timestamptz [note: 'NULL = не підтверджено']
   password_hash text [note: 'argon2id; NULL для OAuth-only']
   display_name text [not null]
@@ -20,9 +20,13 @@ Table users {
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
   deleted_at timestamptz [note: 'мʼяке видалення']
+
+  Indexes {
+    email [unique, note: 'частковий: WHERE deleted_at IS NULL']
+  }
 }
 
-Table user_identities {0
+Table user_identities {
   id uuid [pk]
   user_id uuid [not null]
   provider text [not null, note: 'local | google | github']
@@ -131,7 +135,7 @@ Table node_resources {
 }
 
 Ref: roadmaps.author_id > users.id [delete: set null]
-Ref: roadmaps.category_slug > categories.slug
+Ref: roadmaps.category_slug > categories.slug [update: cascade]
 Ref: roadmaps.forked_from > roadmaps.id [delete: set null]
 Ref: roadmap_nodes.roadmap_id > roadmaps.id [delete: cascade]
 Ref: node_dependencies.node_id > roadmap_nodes.id [delete: cascade]
@@ -151,12 +155,14 @@ Table user_roadmaps {
 
   Indexes {
     (user_id, roadmap_id) [unique]
+    (id, roadmap_id) [unique, note: 'опора для складеного FK у node_progress']
     (user_id, last_activity_at)
   }
 }
 
 Table node_progress {
   id uuid [pk]
+  roadmap_id uuid [not null, note: 'спільна колонка для двох складених FK']
   user_roadmap_id uuid [not null, note: 'не user_id: прогрес не існує без запису на роадмап']
   node_id uuid [not null]
   status text [not null, default: 'not_started', note: 'not_started | in_progress | completed']
@@ -168,6 +174,7 @@ Table node_progress {
     (user_roadmap_id, node_id) [unique]
     node_id
   }
+  Note: 'Складені FK (user_roadmap_id, roadmap_id) і (node_id, roadmap_id) не дають прогресу вказувати на вузол чужого роадмапу.'
 }
 
 Table user_activity_days {
@@ -234,6 +241,7 @@ Table quiz_attempt_questions {
 
   Indexes {
     (attempt_id, question_id) [pk]
+    (attempt_id, position) [unique]
     question_id
   }
   Note: 'І посилання, і зліпок: посилання — аналітика, зліпок — історична правда.'

@@ -1,10 +1,22 @@
-# Схема БД Planetarium — версія 1.1
+# Схема БД Planetarium — версія 1.2
 
-Повна схема з урахуванням усіх зауважень із [ревʼю](db-schema-review.md). Це стан, готовий до першої міграції.
+Повна схема з урахуванням усіх зауважень із [ревʼю](db-schema-review.md). Це стан, з якого написана міграція [`migrations/0001_init.sql`](../migrations/0001_init.sql).
 
 **СУБД:** PostgreSQL 16+
 
 **Зміни у 1.1.** Закрито проблему незмінності історії: `quiz_attempt_questions` тепер зберігає зліпки питання й ключа відповіді (`question_snapshot`, `answer_key_snapshot`) поряд із посиланням на пул. У 1.0 правка питання через `UPDATE` тихо переписувала минулі спроби й оцінки — див. [Незмінність історії](#незмінність-історії).
+
+**Зміни у 1.2.** П'ять точкових правок перед першою міграцією:
+
+| Що | Де | Чому |
+|---|---|---|
+| `roadmap_id` + складені FK | `node_progress` | прогрес міг посилатись на вузол чужого роадмапу |
+| часткове `UNIQUE` на email | `users` | мʼяко видалений акаунт назавжди займав адресу |
+| `UNIQUE (attempt_id, position)` | `quiz_attempt_questions` | два питання могли отримати однакову позицію |
+| `ON UPDATE CASCADE` | `roadmaps.category_slug` | slug іде в URL, отже його перейменують |
+| `UNIQUE (id, roadmap_id)` | `user_roadmaps` | опора для складеного FK у `node_progress` |
+
+Плюс виправлено синтаксичну помилку в [`schema.dbml`](schema.dbml), через яку файл не парсився dbdiagram.io.
 
 ---
 
@@ -112,7 +124,7 @@ categories ─< roadmaps ─┬─< roadmap_nodes ─┬─< node_resources
 | Поле | Тип | Опис |
 |---|---|---|
 | `id` | UUID PK | v7 |
-| `email` | CITEXT NOT NULL UNIQUE | без урахування регістру |
+| `email` | CITEXT NOT NULL | без урахування регістру; унікальний серед живих акаунтів |
 | `email_verified_at` | TIMESTAMPTZ NULL | `NULL` = не підтверджено |
 | `password_hash` | TEXT NULL | `NULL` для акаунтів лише з OAuth |
 | `display_name` | TEXT NOT NULL | |
@@ -125,7 +137,7 @@ categories ─< roadmaps ─┬─< roadmap_nodes ─┬─< node_resources
 ```sql
 CREATE TABLE users (
     id                UUID PRIMARY KEY,
-    email             CITEXT      NOT NULL UNIQUE,
+    email             CITEXT      NOT NULL,
     email_verified_at TIMESTAMPTZ,
     password_hash     TEXT,
     display_name      TEXT        NOT NULL CHECK (length(display_name) BETWEEN 1 AND 100),
@@ -135,7 +147,16 @@ CREATE TABLE users (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at        TIMESTAMPTZ
 );
+
+-- унікальність email тільки серед живих акаунтів
+CREATE UNIQUE INDEX users_email_active_uniq ON users (email) WHERE deleted_at IS NULL;
 ```
+
+**Чому часткове `UNIQUE`, а не звичайне.** Із простим `UNIQUE (email)` мʼяко видалений акаунт назавжди блокує свою адресу: людина не може зареєструватись повторно на власну пошту, і підтримка не має що з цим зробити, крім ручного `UPDATE`. Часткове обмеження знімає адресу з обігу разом з акаунтом.
+
+Наслідок, який треба тримати в голові: **усі запити пошуку користувача мають містити `WHERE deleted_at IS NULL`**, інакше логін знайде видалений акаунт. Це той самий обов'язок, що вже існує для `roadmaps`.
+
+Повне рішення для GDPR — не просто ставити `deleted_at`, а й затирати `email`, `display_name` і `avatar_url` при видаленні. Тоді часткове обмеження стає не потрібним, але сама політика видалення поки не описана (див. [Що свідомо не увійшло](#що-свідомо-не-увійшло)), тож індекс лишається як дешевий захист до того моменту.
 
 **Пароль:** `password_hash` зберігає рядок формату argon2id (`$argon2id$v=19$m=65536,t=3,p=2$...`), у якому вже вшиті параметри. Це дозволяє підняти складність без міграції — старі хеші й далі перевіряються своїми параметрами.
 
@@ -227,7 +248,7 @@ CREATE TABLE categories (
 );
 ```
 
-`slug` як PK зручний: він же йде в URL каталогу.
+`slug` як PK зручний: він же йде в URL каталогу. Саме тому на посиланнях із `roadmaps` стоїть **`ON UPDATE CASCADE`** — те, що видно в URL, рано чи пізно перейменують (`programming` → `software-development`), і без каскаду таке перейменування впирається в FK.
 
 ---
 
@@ -237,7 +258,7 @@ CREATE TABLE categories (
 CREATE TABLE roadmaps (
     id            UUID PRIMARY KEY,
     author_id     UUID REFERENCES users(id) ON DELETE SET NULL,
-    category_slug TEXT NOT NULL REFERENCES categories(slug),
+    category_slug TEXT NOT NULL REFERENCES categories(slug) ON UPDATE CASCADE,
     title         TEXT NOT NULL CHECK (length(title) BETWEEN 3 AND 200),
     description   TEXT NOT NULL DEFAULT '',
     difficulty    TEXT NOT NULL CHECK (difficulty IN ('beginner', 'intermediate', 'advanced')),
@@ -373,7 +394,8 @@ CREATE TABLE user_roadmaps (
     last_activity_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     completed_at     TIMESTAMPTZ,
 
-    UNIQUE (user_id, roadmap_id)
+    UNIQUE (user_id, roadmap_id),
+    UNIQUE (id, roadmap_id)      -- ← опора для складеного FK у node_progress
 );
 
 CREATE INDEX user_roadmaps_user_activity_idx ON user_roadmaps (user_id, last_activity_at DESC);
@@ -389,14 +411,22 @@ CREATE INDEX user_roadmaps_user_activity_idx ON user_roadmaps (user_id, last_act
 
 ```sql
 CREATE TABLE node_progress (
-    id              UUID PRIMARY KEY,
-    user_roadmap_id UUID NOT NULL REFERENCES user_roadmaps(id) ON DELETE CASCADE,
-    node_id         UUID NOT NULL REFERENCES roadmap_nodes(id) ON DELETE CASCADE,
+    id              UUID NOT NULL,
+    roadmap_id      UUID NOT NULL,
+    user_roadmap_id UUID NOT NULL,
+    node_id         UUID NOT NULL,
     status          TEXT NOT NULL DEFAULT 'not_started'
                     CHECK (status IN ('not_started', 'in_progress', 'completed')),
     started_at      TIMESTAMPTZ,
     completed_at    TIMESTAMPTZ,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (id),
+
+    FOREIGN KEY (user_roadmap_id, roadmap_id)
+        REFERENCES user_roadmaps(id, roadmap_id) ON DELETE CASCADE,
+    FOREIGN KEY (node_id, roadmap_id)
+        REFERENCES roadmap_nodes(id, roadmap_id) ON DELETE CASCADE,
 
     UNIQUE (user_roadmap_id, node_id),
     CHECK  (status <> 'completed' OR completed_at IS NOT NULL)
@@ -406,6 +436,10 @@ CREATE INDEX node_progress_node_idx ON node_progress (node_id);
 ```
 
 **Прив'язка до `user_roadmap_id`, а не напряму до `user_id`.** Це гарантує на рівні БД, що прогрес існує лише для роадмапу, на який користувач записаний, і що відписка прибирає прогрес одним каскадом. Запити «весь прогрес користувача» йдуть через join з `user_roadmaps` — недорого, бо там є індекс по `user_id`.
+
+**`roadmap_id` і складені FK (додано у 1.2).** З простими посиланнями на `user_roadmaps(id)` і `roadmap_nodes(id)` база дозволяла записати прогрес по вузлу роадмапу B у запис користувача на роадмап A — жодне обмеження цього не ловило. Це той самий клас помилки, який `node_dependencies` уже закриває складеними ключами, тож і рішення те саме: спільна колонка `roadmap_id`, на яку дивляться обидва FK одночасно. Різні роадмапи по обидва боки просто не зійдуться.
+
+Колонка виглядає надлишковою (її можна отримати join-ом з `user_roadmaps`), і це нормальна ціна: денормалізація тут існує не заради швидкості, а щоб зробити неможливий стан справді неможливим. Вона ж пришвидшує найчастіший запит — «прогрес користувача по цьому роадмапу».
 
 `CHECK` не дає позначити вузол завершеним без дати завершення.
 
@@ -515,11 +549,14 @@ CREATE TABLE quiz_attempt_questions (
     user_answer         JSONB,
     is_correct          BOOLEAN,
 
-    PRIMARY KEY (attempt_id, question_id)
+    PRIMARY KEY (attempt_id, question_id),
+    UNIQUE (attempt_id, position)
 );
 
 CREATE INDEX quiz_attempt_questions_question_idx ON quiz_attempt_questions (question_id);
 ```
+
+PK по `(attempt_id, question_id)` не дає одному питанню трапитись у спробі двічі, а `UNIQUE (attempt_id, position)` — двом питанням отримати ту саму позицію. Без другого обмеження порядок питань у спробі невідтворюваний, і при апеляції неможливо сказати, що саме було «третім питанням».
 
 Таблиця свідомо зберігає **і посилання, і зліпок** — вони вирішують різні задачі й не замінюють одне одного.
 
@@ -725,8 +762,11 @@ quiz_attempts (submit)
 6. **Перерахунок `completion_pct`** у транзакції зміни прогресу.
 7. **Запис зліпків** питання й ключа у момент видачі тесту, а не при перевірці відповідей.
 8. **Оцінювання за `answer_key_snapshot`**, а не за поточним рядком пулу.
+9. **Запис користувача на роадмап вузла** при створенні `quiz_attempts`.
 
 Кожен пункт — кандидат на тест.
+
+Пункт 9 — свідома межа. У `node_progress` така сама вимога закрита складеним FK, і спокусливо зробити те саме тут. Але `quiz_attempts` тримає `user_id` заради `UNIQUE (user_id, idempotency_key)` та індексу анти-фарму; додавання ще й `user_roadmap_id` з `roadmap_id` продублювало б користувача у трьох колонках і зробило б обидва обмеження крихкими. Ціна помилки теж різна: осиротілий прогрес спотворює `completion_pct` і скіл-дерево, а спроба без запису на роадмап — це лише зайвий рядок в журналі. Тому тут — перевірка в usecase і тест на неї.
 
 ---
 
