@@ -97,9 +97,8 @@ Under docker compose the API reaches the database as host `db`; `.env.example`
 keeps `localhost` because that is the correct value when running the API on the
 host with `go run`.
 
-`config.InitConfig` does not parse the environment yet — it returns a zero
-`Config`. Until it does, entrypoints read the variables directly; `cmd/api` keeps
-the port as a constant rather than taking an empty string from config.
+`config.InitConfig` is the single place these variables are read. Both entrypoints
+call it; do not reach for `os.Getenv` elsewhere.
 
 If you add configuration behavior, keep it documented and avoid introducing hard-coded secrets.
 

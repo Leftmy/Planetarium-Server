@@ -14,13 +14,11 @@ import (
 	"database/sql"
 	"flag"
 	"log"
-	"os"
-	"strconv"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
-	"github.com/leftmy/planetarium-server/internal/adapter/postgres"
+	"github.com/leftmy/planetarium-server/config"
 	"github.com/leftmy/planetarium-server/migrations"
 )
 
@@ -32,12 +30,12 @@ func main() {
 		command = "up"
 	}
 
-	cfg, err := configFromEnv()
+	cfg, err := config.InitConfig()
 	if err != nil {
 		log.Fatalf("read config: %v", err)
 	}
 
-	db, err := sql.Open("pgx", cfg.BuildURL())
+	db, err := sql.Open("pgx", cfg.Postgres.BuildURL())
 	if err != nil {
 		log.Fatalf("open database: %v", err)
 	}
@@ -56,30 +54,4 @@ func main() {
 	if err := goose.RunContext(context.Background(), command, db, ".", flag.Args()[1:]...); err != nil {
 		log.Fatalf("goose %s: %v", command, err)
 	}
-}
-
-// configFromEnv reads the same DB_* variables as .env.example. Once
-// config.InitConfig parses the environment for real, this should call it
-// instead of duplicating the lookups.
-func configFromEnv() (postgres.Config, error) {
-	port, err := strconv.ParseUint(env("DB_PORT", "5432"), 10, 16)
-	if err != nil {
-		return postgres.Config{}, err
-	}
-
-	return postgres.Config{
-		User:     env("DB_USER", "postgres"),
-		Password: env("DB_PASSWORD", "secret"),
-		Host:     env("DB_HOST", "localhost"),
-		Port:     uint(port),
-		Name:     env("DB_NAME", "planetarium_db"),
-	}, nil
-}
-
-func env(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-
-	return fallback
 }
