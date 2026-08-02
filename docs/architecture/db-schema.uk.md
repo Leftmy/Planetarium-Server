@@ -1,8 +1,8 @@
 🇺🇸 [English](db-schema.md) | 🇺🇦 **Українська**
 
-# Схема БД Planetarium — версія 1.1
+# Схема БД Planetarium — версія 1.2
 
-Повна схема з урахуванням усіх зауважень із ревʼю. Це стан, готовий до першої міграції.
+Повна схема з урахуванням фінальних архітектурних рішень: делегованої автентифікації (Ory Kratos) та In-Memory трекінгу активності (Redis). Це стан, готовий до першої міграції.
 
 **СУБД:** PostgreSQL 16+
 
@@ -12,54 +12,16 @@
 
 ```mermaid
 erDiagram
-    %% 1. Користувачі та автентифікація
+    %% 1. Користувачі (Тільки профіль)
     users {
         uuid id PK
         citext email
-        timestamptz email_verified_at
-        text password_hash
         text display_name
         text avatar_url
         text timezone
         timestamptz created_at
         timestamptz updated_at
         timestamptz deleted_at
-    }
-
-    user_identities {
-        uuid id PK
-        uuid user_id FK
-        text provider
-        text provider_user_id
-        citext email
-        timestamptz created_at
-    }
-
-    refresh_tokens {
-        uuid id PK
-        uuid user_id FK
-        text token_hash
-        uuid replaced_by FK
-        text user_agent
-        inet ip
-        timestamptz expires_at
-        timestamptz revoked_at
-        timestamptz created_at
-    }
-
-    user_tokens {
-        uuid id PK
-        uuid user_id FK
-        text purpose
-        text token_hash
-        timestamptz expires_at
-        timestamptz used_at
-        timestamptz created_at
-    }
-
-    user_activity_days {
-        uuid user_id PK, FK
-        date day PK
     }
 
     %% 2. Контент: роадмапи
@@ -226,11 +188,6 @@ erDiagram
     }
 
     %% --- ЗВ'ЯЗКИ ---
-    users ||--o{ user_identities : "id = user_id"
-    users ||--o{ refresh_tokens : "id = user_id"
-    users ||--o{ user_tokens : "id = user_id"
-    users ||--o{ user_activity_days : "id = user_id"
-    
     categories ||--o{ roadmaps : "slug = category_slug"
     users ||--o{ roadmaps : "id = author_id"
     roadmaps ||--o{ roadmaps : "id = forked_from"
@@ -263,27 +220,24 @@ erDiagram
 
 ---
 
-## Ухвалені рішення
+## Ухвалені архітектурні рішення
 
-Три продуктові питання лишались відкритими. Тут узято найдешевші для MVP варіанти — **перевірте їх, це рішення власника продукту, а не технічні**.
-
-| Питання | Взято | Наслідок для схеми |
+| Домен | Взято | Наслідок для схеми |
 |---|---|---|
-| Редагування опублікованого роадмапу | Структурні правки заборонені після публікації; для змін — форк | `roadmaps.published_at`; перевірка в usecase |
-| Прогрес гостя | Живе в `localStorage`, переноситься в БД при реєстрації | Гість у схемі не представлений |
-| Таймзона streak | Таймзона профілю користувача | `users.timezone`, `user_activity_days.day` рахується в ній |
-
-Якщо якесь рішення зміниться — найдорожче переграти перше: версіонування роадмапів вплине на `node_progress` і `user_roadmaps`.
+| **Автентифікація та Ідентифікація** | **Ory Kratos** (Зовнішній IDP) | Видалено таблиці сесій та токенів. Таблиця `users` тепер є суто профілем, де `id` жорстко відповідає Identity UUID з Kratos. |
+| **Heatmap активності та Стріки** | **Redis Bitmaps** | Видалено таблицю `user_activity_days`. Активність трекається In-Memory через побітові операції, що знімає навантаження на запис (write contention) з БД. |
+| **Редагування опублікованого роадмапу** | Структурні правки заборонені | `roadmaps.published_at` забезпечує незмінність; для змін використовується механізм форків. |
+| **Прогрес гостя** | Живе на клієнті (`localStorage`) | Гість у схемі не представлений; переноситься в БД при реєстрації. |
 
 ---
 
 ## Загальні конвенції
 
-**Первинні ключі — UUIDv7**, генеруються застосунком (`uuid.NewV7()` з `[github.com/google/uuid](https://github.com/google/uuid)`, вже в залежностях). Впорядковані за часом, тому вставки не фрагментують індекс. Не використовуйте `uuid.New()` — це v4.
+**Первинні ключі — UUIDv7**, генеруються застосунком. Впорядковані за часом, тому вставки не фрагментують індекс. Не використовуйте `uuid.New()` — це v4.
 
 **Переліки — `TEXT` + `CHECK`**, не нативні enum PostgreSQL: нативний тип не дозволяє видалити значення, а `CHECK` міняється звичайним `ALTER TABLE` у транзакції. Там, де значення несе метадані (категорії, типи ачівок), — довідкова таблиця.
 
-**Час — завжди `TIMESTAMPTZ`.** Дати активності — `DATE`, обчислені в таймзоні користувача.
+**Час — завжди `TIMESTAMPTZ`.** 
 
 **Іменування:** таблиці в множині, `snake_case`; FK — `<сутність>_id`; індекси — `<таблиця>_<колонки>_idx`.
 
@@ -291,16 +245,12 @@ erDiagram
 
 **Мʼяке видалення** (`deleted_at`) — тільки для `users` і `roadmaps`: на них висять чужі дані.
 
-### Розширення
+### Розширення та тригери
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS citext;    -- email без урахування регістру
 CREATE EXTENSION IF NOT EXISTS pg_trgm;   -- пошук по каталогу
-```
 
-### Спільний тригер `updated_at`
-
-```sql
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = now();
@@ -311,31 +261,16 @@ $$ LANGUAGE plpgsql;
 
 ---
 
-## 1. Користувачі та автентифікація
+## 1. Користувачі (Профіль)
 
 ### `users`
 
-Особа. Способи входу винесені окремо — див. `user_identities`.
-
-| Поле | Тип | Опис |
-|---|---|---|
-| `id` | UUID PK | v7 |
-| `email` | CITEXT NOT NULL UNIQUE | без урахування регістру |
-| `email_verified_at` | TIMESTAMPTZ NULL | `NULL` = не підтверджено |
-| `password_hash` | TEXT NULL | `NULL` для акаунтів лише з OAuth |
-| `display_name` | TEXT NOT NULL | |
-| `avatar_url` | TEXT NULL | |
-| `timezone` | TEXT NOT NULL DEFAULT `'UTC'` | IANA, напр. `Europe/Kyiv`; база для streak |
-| `created_at` | TIMESTAMPTZ NOT NULL DEFAULT now() | |
-| `updated_at` | TIMESTAMPTZ NOT NULL DEFAULT now() | `[updated_at]` |
-| `deleted_at` | TIMESTAMPTZ NULL | мʼяке видалення |
+Представляє профіль користувача на рівні застосунку. **Управління паролями, сесіями та підтвердженням пошти делеговано Ory Kratos.** Поле `id` має явно збігатися з Identity ID, згенерованим у Kratos (створюється через вебхук).
 
 ```sql
 CREATE TABLE users (
     id                UUID PRIMARY KEY,
-    email             CITEXT      NOT NULL UNIQUE,
-    email_verified_at TIMESTAMPTZ,
-    password_hash     TEXT,
+    email             CITEXT      NOT NULL UNIQUE, -- Синхронізується з Kratos для сповіщень
     display_name      TEXT        NOT NULL CHECK (length(display_name) BETWEEN 1 AND 100),
     avatar_url        TEXT,
     timezone          TEXT        NOT NULL DEFAULT 'UTC',
@@ -346,78 +281,6 @@ CREATE TABLE users (
 
 CREATE TRIGGER users_updated_at BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-```
-
-**Пароль:** `password_hash` зберігає рядок формату argon2id (`$argon2id$v=19$m=65536,t=3,p=2$...`), у якому вже вшиті параметри. Це дозволяє підняти складність без міграції — старі хеші й далі перевіряються своїми параметрами.
-
----
-
-### `user_identities`
-
-Кожен спосіб входу — окремий рядок. Саме це дозволяє одній людині мати і пароль, і Google на тому самому акаунті.
-
-```sql
-CREATE TABLE user_identities (
-    id               UUID PRIMARY KEY,
-    user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    provider         TEXT NOT NULL CHECK (provider IN ('local', 'google', 'github')),
-    provider_user_id TEXT NOT NULL,
-    email            CITEXT,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    UNIQUE (provider, provider_user_id),
-    UNIQUE (user_id, provider)
-);
-
-CREATE INDEX user_identities_user_idx ON user_identities (user_id);
-```
-
-> **Важливо для безпеки.** Пошук акаунта при OAuth-вході робиться **тільки** по `(provider, provider_user_id)`. Звʼязувати з існуючим акаунтом за збігом email можна лише якщо провайдер підтвердив цю адресу **і** `users.email_verified_at IS NOT NULL`. Інакше це вектор захоплення акаунта.
-
----
-
-### `refresh_tokens`
-
-Активні сесії. Дає розлогінення, список пристроїв і можливість вигнати вкрадений токен.
-
-```sql
-CREATE TABLE refresh_tokens (
-    id          UUID PRIMARY KEY,
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_hash  TEXT NOT NULL UNIQUE,
-    replaced_by UUID REFERENCES refresh_tokens(id) ON DELETE SET NULL,
-    user_agent  TEXT,
-    ip          INET,
-    expires_at  TIMESTAMPTZ NOT NULL,
-    revoked_at  TIMESTAMPTZ,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX refresh_tokens_active_idx ON refresh_tokens (user_id) WHERE revoked_at IS NULL;
-```
-
-Зберігається **хеш** токена, не сам токен: дамп БД не має відкривати доступ до живих сесій.
-
-`replaced_by` реалізує ротацію: при оновленні старий токен позначається відкликаним і вказує на новий. Якщо хтось пред'явив уже відкликаний токен — це ознака крадіжки, і правильна реакція — відкликати весь ланцюжок сесій користувача.
-
----
-
-### `user_tokens`
-
-Одноразові токени для верифікації пошти й скидання пароля.
-
-```sql
-CREATE TABLE user_tokens (
-    id         UUID PRIMARY KEY,
-    user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    purpose    TEXT NOT NULL CHECK (purpose IN ('email_verify', 'password_reset')),
-    token_hash TEXT NOT NULL UNIQUE,
-    expires_at TIMESTAMPTZ NOT NULL,
-    used_at    TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX user_tokens_user_purpose_idx ON user_tokens (user_id, purpose) WHERE used_at IS NULL;
 ```
 
 ---
@@ -437,8 +300,6 @@ CREATE TABLE categories (
     is_active  BOOLEAN NOT NULL DEFAULT true
 );
 ```
-
-`slug` як PK зручний: він же йде в URL каталогу.
 
 ---
 
@@ -470,12 +331,6 @@ CREATE TRIGGER roadmaps_updated_at BEFORE UPDATE ON roadmaps
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 ```
 
-**`author_id` → `SET NULL`, а не `CASCADE`:** видалення автора не має знищувати публічні роадмапи, якими користуються інші. `is_official = true` — курований контент команди, зазвичай без автора.
-
-**`forked_from` → `SET NULL`:** видалення оригіналу не ламає форки.
-
-**`published_at`** — момент публікації. Після нього usecase забороняє структурні зміни (додавання/видалення вузлів, зміну залежностей); правки текстів і ресурсів лишаються дозволеними. Так чужий прогрес не «зникає» під користувачем.
-
 ---
 
 ### `roadmap_nodes`
@@ -486,13 +341,13 @@ CREATE TABLE roadmap_nodes (
     roadmap_id  UUID NOT NULL REFERENCES roadmaps(id) ON DELETE CASCADE,
     title       TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    section     TEXT,                                  -- був `group` — зарезервоване слово
+    section     TEXT,
     order_index DOUBLE PRECISION NOT NULL,
     quiz_config JSONB NOT NULL DEFAULT '{"schema_version": 1}'::jsonb,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    UNIQUE (id, roadmap_id)      -- ← опора для складених FK нижче
+    UNIQUE (id, roadmap_id)
 );
 
 CREATE INDEX roadmap_nodes_roadmap_order_idx ON roadmap_nodes (roadmap_id, order_index);
@@ -501,22 +356,7 @@ CREATE TRIGGER roadmap_nodes_updated_at BEFORE UPDATE ON roadmap_nodes
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 ```
 
-**`order_index` — `DOUBLE PRECISION`, не `INT`.** Вставка вузла між двома сусідніми = середнє арифметичне їхніх позицій, один `UPDATE` замість переписування хвоста. Для drag-and-drop білдера з P1 це принципово.
-
-**`UNIQUE (id, roadmap_id)`** виглядає надлишковим (`id` і так PK), але без нього неможливий складений зовнішній ключ, який утримує залежності в межах одного роадмапу.
-
-**`quiz_config`** — поріг проходження, кількість питань, дозволені типи, кулдаун. Приклад:
-
-```json
-{
-  "schema_version": 1,
-  "questions_per_attempt": 10,
-  "pass_threshold": 70,
-  "max_attempts_per_day": 3,
-  "cooldown_minutes": 30,
-  "question_types": ["single_choice", "multi_choice"]
-}
-```
+**`order_index` — `DOUBLE PRECISION`.** Вставка вузла між двома сусідніми = середнє арифметичне їхніх позицій, один `UPDATE` замість переписування хвоста. Для drag-and-drop білдера це принципово.
 
 ---
 
@@ -543,10 +383,6 @@ CREATE TABLE node_dependencies (
 CREATE INDEX node_dependencies_node_idx    ON node_dependencies (node_id);
 CREATE INDEX node_dependencies_depends_idx ON node_dependencies (depends_on_node_id);
 ```
-
-Складені FK через спільний `roadmap_id` роблять залежність між різними роадмапами **неможливою на рівні БД** — не покладаючись на дисципліну коду.
-
-**Чого БД не зробить:** ациклічності. Її треба перевіряти в usecase перед комітом — обхід у глибину по стану графа з урахуванням нового ребра. Цикл підвісить обчислення доступності вузлів.
 
 ---
 
@@ -590,10 +426,6 @@ CREATE TABLE user_roadmaps (
 CREATE INDEX user_roadmaps_user_activity_idx ON user_roadmaps (user_id, last_activity_at DESC);
 ```
 
-**`UNIQUE (user_id, roadmap_id)`** — подвійний клік по «Почати» більше не створить два записи.
-
-**`completion_pct` — кеш.** Оновлювати **в тій самій транзакції**, що й `node_progress`, інакше показник розійдеться з реальністю. `NUMERIC`, а не `float`, щоб «100%» був рівно сотнею.
-
 ---
 
 ### `node_progress`
@@ -619,33 +451,9 @@ CREATE TRIGGER node_progress_updated_at BEFORE UPDATE ON node_progress
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 ```
 
-**Прив'язка до `user_roadmap_id`, а не напряму до `user_id`.** Це гарантує на рівні БД, що прогрес існує лише для роадмапу, на який користувач записаний, і що відписка прибирає прогрес одним каскадом. Запити «весь прогрес користувача» йдуть через join з `user_roadmaps` — недорого, бо там є індекс по `user_id`.
-
-`CHECK` не дає позначити вузол завершеним без дати завершення.
-
----
-
-### `user_activity_days`
-
-Один рядок на день активності. Робить streak обчислюваним, а не вгадуваним.
-
-```sql
-CREATE TABLE user_activity_days (
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    day     DATE NOT NULL,
-    PRIMARY KEY (user_id, day)
-);
-```
-
-Запис — `INSERT ... ON CONFLICT DO NOTHING` при будь-якій значущій дії. `day` рахується в `users.timezone`, інакше зміна доби на сервері обриватиме streak користувачам в іншому поясі.
-
-Дає одразу три речі: точний поточний і найдовший streak (**завжди перераховуваний** — кешовані лічильники з часом розходяться), heatmap-календар у профілі й аналітику утримання. Обсяг — до 365 рядків на активного користувача на рік.
-
 ---
 
 ## 4. Тести та AI
-
-Ключова зміна проти першої версії: питання **не генеруються на кожну спробу**, а беруться з пулу.
 
 ### `quiz_questions`
 
@@ -667,15 +475,6 @@ CREATE TABLE quiz_questions (
 CREATE INDEX quiz_questions_node_active_idx
     ON quiz_questions (node_id, difficulty) WHERE is_active;
 ```
-
-Що дає пул, крім економії на викликах OpenAI:
-
-- **Витік відповідей стає структурно неможливим** — `answer_key` лежить у таблиці, яку хендлер видачі тесту просто не читає.
-- **Анти-фарм працює.** Вимога «не показувати ті самі питання повторно» — це `WHERE id NOT IN (питання попередніх спроб)`. На генерації-на-льоту вона не реалізується взагалі.
-- **Нуль очікування.** Користувач не чекає на модель — пул уже наповнений.
-- **Модерація без міграцій.** Погане питання вимикається через `is_active = false`.
-
-`model` і `prompt_version` потрібні для розбору скарг: без них неможливо відтворити, як саме зʼявилось спірне питання.
 
 ---
 
@@ -704,12 +503,6 @@ CREATE INDEX quiz_attempts_user_node_time_idx
     ON quiz_attempts (user_id, node_id, started_at DESC);
 ```
 
-**`idempotency_key`** генерує клієнт перед відправкою. Подвійний клік або ретрай мережі не створить другу спробу й не спалить зайву генерацію фідбеку.
-
-**`prompt_tokens` / `completion_tokens`** — щоб бачити витрати на дашборді, а не дізнаватись про них із рахунку.
-
-`score`, `passed`, `submitted_at` — `NULL`, поки спроба не завершена.
-
 ---
 
 ### `quiz_attempt_questions`
@@ -732,13 +525,7 @@ CREATE TABLE quiz_attempt_questions (
 CREATE INDEX quiz_attempt_questions_question_idx ON quiz_attempt_questions (question_id);
 ```
 
-Таблиця свідомо зберігає **і посилання, і зліпок** — вони вирішують різні задачі й не замінюють одне одного.
-
-**Зліпок (`question_snapshot`, `answer_key_snapshot`) — це історична правда.** Якщо адміністратор виправити одруківку через `UPDATE quiz_questions`, усі минулі спроби, що посилаються на це питання, тихо «зміняться» — ви більше не знатимете, який саме текст бачив користувач місяць тому. Зліпок робить спробу незмінною незалежно від того, що далі станеться з оригіналом.
-
-**Посилання (`question_id`) — це аналітика.** Пошук зламаних питань через `GROUP BY question_id` працює миттєво.
-
-На `question_id` **немає** `ON DELETE CASCADE` — історія спроб не має зникати через прибирання питання з пулу. Питання виводяться з обігу через `is_active = false`, а не видаленням.
+Таблиця свідомо зберігає **і посилання, і зліпок** — вони вирішують різні задачі й не замінюють одне одного (зліпок забезпечує історичну правду, посилання — аналітику пулу).
 
 ---
 
@@ -783,8 +570,6 @@ CREATE TABLE skill_node_dependencies (
     CHECK  (skill_node_id <> depends_on_skill_node_id)
 );
 ```
-
-Це **DAG, а не дерево**: вузол може мати кілька передумов. `tier` лишається тільки як підказка для розкладки на екрані.
 
 ---
 
@@ -847,8 +632,6 @@ CREATE TABLE user_achievements (
 CREATE INDEX user_achievements_user_idx ON user_achievements (user_id, earned_at DESC);
 ```
 
-`dedup_key` захищає від дублювання ачівок при паралельних запитах чи повторних подіях.
-
 ---
 
 ## 7. Допоміжне та Транзакції
@@ -858,7 +641,7 @@ CREATE INDEX user_achievements_user_idx ON user_achievements (user_id, earned_at
 ```
 1. categories, achievement_types
 2. users
-3. user_identities, refresh_tokens, user_tokens, user_activity_days, user_achievements
+3. user_achievements
 4. roadmaps
 5. roadmap_nodes
 6. node_dependencies, node_resources, quiz_questions, skill_nodes
@@ -872,28 +655,22 @@ CREATE INDEX user_achievements_user_idx ON user_achievements (user_id, earned_at
 
 ### Транзакційні межі
 
-Завершення тесту зачіпає чотири області в одній бізнес-операції:
+Завершення тесту зачіпає декілька областей в одній бізнес-операції:
 
 ```
 quiz_attempts (submit)
   → node_progress (status = completed)
     → user_roadmaps (completion_pct, last_activity_at)
-    → user_activity_days (день активності)
     → skill_node_states (перерахунок доступних вузлів)
       → user_achievements (нові ачівки)
 ```
-
-Усе це — **одна транзакція**.
-
----
+*(Примітка: Фіксація дня активності та оновлення стріків тепер відбуваються асинхронно/паралельно у Redis Bitmaps і винесені за межі основної транзакції Postgres).*
 
 ### Незмінність історії (Імутабельність)
 
-- **Зліпки у спробі:** `question_snapshot` і `answer_key_snapshot` у `quiz_attempt_questions` зберігають точну копію питань на момент проходження. Якщо адмін міняє питання у пулі (`quiz_questions`), це ніяк не впливає на минулі спроби.
+- **Зліпки у спробі:** `question_snapshot` і `answer_key_snapshot` у `quiz_attempt_questions` зберігають точну копію питань на момент проходження. 
 - **Оцінювання:** Розрахунок `score` проводиться виключно за `answer_key_snapshot`.
 - **Права доступу:** Журнальні таблиці (`quiz_attempts`, `quiz_attempt_questions`, `user_achievements`) після створення мають бути доступні лише на читання.
-
-Загальне правило: **довідники й пул змінні, журнали — ні.**
 
 ---
 
@@ -901,33 +678,11 @@ quiz_attempts (submit)
 
 1. **Ациклічність** `node_dependencies` і `skill_node_dependencies`.
 2. **Заборона структурних правок** роадмапу після `published_at`.
-3. **Звʼязування OAuth з існуючим акаунтом** тільки при підтвердженому email з обох боків.
-4. **Кулдаун і ліміт спроб** із `quiz_config`.
-5. **Виключення вже показаних питань** при виборі з пулу.
-6. **Перерахунок `completion_pct`** у транзакції зміни прогресу.
-7. **Запис зліпків** питання й ключа у момент видачі тесту, а не при перевірці відповідей.
-8. **Оцінювання за `answer_key_snapshot`**, а не за поточним рядком пулу.
-
----
-
-## Що змінилось проти першої версії
-
-| Було | Стало | Чому |
-|---|---|---|
-| `User.provider` | таблиця `user_identities` | один акаунт = кілька способів входу; OAuth без ризику захоплення через email |
-| — | `refresh_tokens`, `user_tokens`, `email_verified_at` | без них P0-автентифікація не працює |
-| `SkillNode.tier` як структура | `skill_node_dependencies` | tier — це глибина, а не звʼязок; станів дерева не було чим рахувати |
-| `QuizAttempt.questions` з відповідями | `quiz_questions` (пул) + `quiz_attempt_questions` зі зліпками | витік відповідей, вартість генерації, неможливий анти-фарм; зліпки утримують історію незмінною |
-| `NodeDependency` без обмежень | складені FK + `UNIQUE` + `CHECK` | дублікати, самозалежність, залежності між роадмапами |
-| `last_activity_at` для streak | `user_activity_days` | streak неможливо порахувати з однієї дати |
-| `RoadmapNode.group` | `section` | `GROUP` — зарезервоване слово PostgreSQL |
-| `order_index INT` | `DOUBLE PRECISION` | drag-and-drop без переписування хвоста |
-| `category` рядком | таблиця `categories` | різнобій значень; UI все одно потребує назви й іконки |
-| `Achievement.type` рядком | `achievement_types` + `dedup_key` | дублювання ачівок при гонці; метадані для UI |
-| `NodeProgress.user_id` | `user_roadmap_id` | прогрес не може існувати без запису на роадмап |
-| `timestamp` | `timestamptz` | streak і дедлайни ламаються на таймзонах |
-| нативні enum (малось на увазі) | `TEXT` + `CHECK` | з нативного enum неможливо видалити значення |
-| UUID (за замовчуванням v4) | UUIDv7 | випадкові PK фрагментують індекс на вставках |
+3. **Кулдаун і ліміт спроб** із `quiz_config`.
+4. **Виключення вже показаних питань** при виборі з пулу.
+5. **Перерахунок `completion_pct`** у транзакції зміни прогресу.
+6. **Запис зліпків** питання й ключа у момент видачі тесту, а не при перевірці відповідей.
+7. **Оцінювання за `answer_key_snapshot`**, а не за поточним рядком пулу.
 
 ---
 
