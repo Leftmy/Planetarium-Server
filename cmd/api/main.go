@@ -2,18 +2,26 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
+
+	httptransport "github.com/leftmy/planetarium-server/internal/transport/http"
+	"github.com/leftmy/planetarium-server/pkg/httpserver"
 )
 
+// defaultPort stays a constant until config.InitConfig actually parses the environment.
+const defaultPort = "8080"
+
 func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprint(w, "Welcome to the Planetarium API!")
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := fmt.Fprint(w, "Welcome to the Planetarium API!"); err != nil {
+			log.Printf("write response: %v", err)
+		}
 	})
 
-	fmt.Println("Hello from Planetarium! The server is running on port 8080...")
+	httptransport.SetupRoutes(mux)
 
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		fmt.Printf("Server failed to start: %v\n", err)
-	}
+	httpserver.Start(mux, defaultPort)
 }

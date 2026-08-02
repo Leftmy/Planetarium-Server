@@ -43,7 +43,7 @@ Development is split into three priority levels: **P0 (MVP / Critical)**, **P1 (
 
 ## Architectural Vision
 
-*   **Clean/Hexagonal Architecture (Backend):** Decoupled layers (Domain, Usecase, Repository, Delivery) to guarantee testability and infrastructure flexibility.
+* **Feature-Based (Vertical Slicing) Architecture (Backend):** Code is organized around business features rather than technical layers. This approach guarantees high cohesion, isolates feature dependencies, and makes the codebase easier to navigate and scale as the project grows.
 *   **RESTful API:** Standardized contract-first communication between the Go server and the React client.
 *   **Component-Driven UI (Frontend):** Modular and declarative frontend components to ensure scalable rendering of interactive roadmaps.
 
