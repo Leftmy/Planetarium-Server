@@ -1,0 +1,327 @@
+// Planetarium — схема БД v1.1
+// Візуалізація: https://dbdiagram.io/d — вставити цей файл цілком.
+// Джерело правди: docs/db-schema.md
+
+Project planetarium {
+  database_type: 'PostgreSQL'
+  Note: 'Гейміфікована платформа навчальних роадмапів. PostgreSQL 16+, PK — UUIDv7.'
+}
+
+// ─────────────────────────── 1. Користувачі ───────────────────────────
+
+Table users {
+  id uuid [pk, note: 'UUIDv7']
+  email citext [not null, unique]
+  email_verified_at timestamptz [note: 'NULL = не підтверджено']
+  password_hash text [note: 'argon2id; NULL для OAuth-only']
+  display_name text [not null]
+  avatar_url text
+  timezone text [not null, default: 'UTC', note: 'IANA; база для streak']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  deleted_at timestamptz [note: 'мʼяке видалення']
+}
+
+Table user_identities {0
+  id uuid [pk]
+  user_id uuid [not null]
+  provider text [not null, note: 'local | google | github']
+  provider_user_id text [not null]
+  email citext
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (provider, provider_user_id) [unique]
+    (user_id, provider) [unique]
+    user_id
+  }
+  Note: 'Пошук при OAuth — тільки по (provider, provider_user_id).'
+}
+
+Table refresh_tokens {
+  id uuid [pk]
+  user_id uuid [not null]
+  token_hash text [not null, unique, note: 'хеш, не сам токен']
+  replaced_by uuid [note: 'ротація токенів']
+  user_agent text
+  ip inet
+  expires_at timestamptz [not null]
+  revoked_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table user_tokens {
+  id uuid [pk]
+  user_id uuid [not null]
+  purpose text [not null, note: 'email_verify | password_reset']
+  token_hash text [not null, unique]
+  expires_at timestamptz [not null]
+  used_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Ref: user_identities.user_id > users.id [delete: cascade]
+Ref: refresh_tokens.user_id > users.id [delete: cascade]
+Ref: refresh_tokens.replaced_by > refresh_tokens.id [delete: set null]
+Ref: user_tokens.user_id > users.id [delete: cascade]
+
+// ─────────────────────────── 2. Контент ───────────────────────────
+
+Table categories {
+  slug text [pk, note: 'йде в URL каталогу']
+  title text [not null]
+  icon text
+  sort_order int [not null, default: 0]
+  is_active boolean [not null, default: true]
+}
+
+Table roadmaps {
+  id uuid [pk]
+  author_id uuid [note: 'SET NULL: видалення автора не нищить публічні роадмапи']
+  category_slug text [not null]
+  title text [not null]
+  description text [not null, default: '']
+  difficulty text [not null, note: 'beginner | intermediate | advanced']
+  visibility text [not null, default: 'private', note: 'private | public']
+  is_official boolean [not null, default: false]
+  forked_from uuid
+  published_at timestamptz [note: 'після публікації структурні правки заборонені']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  deleted_at timestamptz
+}
+
+Table roadmap_nodes {
+  id uuid [pk]
+  roadmap_id uuid [not null]
+  title text [not null]
+  description text [not null, default: '']
+  section text [note: 'був group — зарезервоване слово']
+  order_index double [not null, note: 'DOUBLE: вставка між сусідами = середнє']
+  quiz_config jsonb [not null, note: 'поріг, к-сть питань, кулдаун']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (id, roadmap_id) [unique, note: 'опора для складених FK']
+    (roadmap_id, order_index)
+  }
+}
+
+Table node_dependencies {
+  id uuid [pk]
+  roadmap_id uuid [not null]
+  node_id uuid [not null]
+  depends_on_node_id uuid [not null]
+
+  Indexes {
+    (node_id, depends_on_node_id) [unique]
+  }
+  Note: 'Складені FK через спільний roadmap_id роблять міжроадмапну залежність неможливою. Ациклічність перевіряє usecase.'
+}
+
+Table node_resources {
+  id uuid [pk]
+  node_id uuid [not null]
+  title text [not null]
+  url text [not null]
+  type text [not null, note: 'article | video | docs | course | other']
+  sort_order int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Ref: roadmaps.author_id > users.id [delete: set null]
+Ref: roadmaps.category_slug > categories.slug
+Ref: roadmaps.forked_from > roadmaps.id [delete: set null]
+Ref: roadmap_nodes.roadmap_id > roadmaps.id [delete: cascade]
+Ref: node_dependencies.node_id > roadmap_nodes.id [delete: cascade]
+Ref: node_dependencies.depends_on_node_id > roadmap_nodes.id [delete: cascade]
+Ref: node_resources.node_id > roadmap_nodes.id [delete: cascade]
+
+// ─────────────────────────── 3. Прогрес ───────────────────────────
+
+Table user_roadmaps {
+  id uuid [pk]
+  user_id uuid [not null]
+  roadmap_id uuid [not null]
+  completion_pct "numeric(5,2)" [not null, default: 0, note: 'кеш; оновлювати в одній транзакції з node_progress']
+  started_at timestamptz [not null, default: `now()`]
+  last_activity_at timestamptz [not null, default: `now()`]
+  completed_at timestamptz
+
+  Indexes {
+    (user_id, roadmap_id) [unique]
+    (user_id, last_activity_at)
+  }
+}
+
+Table node_progress {
+  id uuid [pk]
+  user_roadmap_id uuid [not null, note: 'не user_id: прогрес не існує без запису на роадмап']
+  node_id uuid [not null]
+  status text [not null, default: 'not_started', note: 'not_started | in_progress | completed']
+  started_at timestamptz
+  completed_at timestamptz
+  updated_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (user_roadmap_id, node_id) [unique]
+    node_id
+  }
+}
+
+Table user_activity_days {
+  user_id uuid [not null]
+  day date [not null, note: 'рахується в users.timezone']
+
+  Indexes {
+    (user_id, day) [pk]
+  }
+  Note: 'Streak і heatmap. INSERT ... ON CONFLICT DO NOTHING.'
+}
+
+Ref: user_roadmaps.user_id > users.id [delete: cascade]
+Ref: user_roadmaps.roadmap_id > roadmaps.id [delete: cascade]
+Ref: node_progress.user_roadmap_id > user_roadmaps.id [delete: cascade]
+Ref: node_progress.node_id > roadmap_nodes.id [delete: cascade]
+Ref: user_activity_days.user_id > users.id [delete: cascade]
+
+// ─────────────────────────── 4. Тести та AI ───────────────────────────
+
+Table quiz_questions {
+  id uuid [pk]
+  node_id uuid [not null]
+  payload jsonb [not null, note: 'питання + варіанти; віддається клієнту']
+  answer_key jsonb [not null, note: 'НІКОЛИ не виходить назовні']
+  difficulty text [not null, note: 'easy | medium | hard']
+  model text [not null]
+  prompt_version text [not null]
+  is_active boolean [not null, default: true, note: 'модерація без міграцій']
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Пул згенерованих питань. Наповнюється фоново.'
+}
+
+Table quiz_attempts {
+  id uuid [pk]
+  user_id uuid [not null]
+  node_id uuid [not null]
+  idempotency_key text [not null, note: 'клієнтський; захист від подвійного сабміту']
+  score "numeric(5,2)"
+  passed boolean
+  feedback jsonb
+  model text
+  prompt_version text
+  prompt_tokens int
+  completion_tokens int
+  started_at timestamptz [not null, default: `now()`]
+  submitted_at timestamptz
+
+  Indexes {
+    (user_id, idempotency_key) [unique]
+    (user_id, node_id, started_at)
+  }
+}
+
+Table quiz_attempt_questions {
+  attempt_id uuid [not null]
+  question_id uuid [not null, note: 'без CASCADE: історія не зникає']
+  position int [not null]
+  question_snapshot jsonb [not null, note: 'що бачив користувач']
+  answer_key_snapshot jsonb [not null, note: 'за чим оцінювали']
+  user_answer jsonb
+  is_correct boolean
+
+  Indexes {
+    (attempt_id, question_id) [pk]
+    question_id
+  }
+  Note: 'І посилання, і зліпок: посилання — аналітика, зліпок — історична правда.'
+}
+
+Ref: quiz_questions.node_id > roadmap_nodes.id [delete: cascade]
+Ref: quiz_attempts.user_id > users.id [delete: cascade]
+Ref: quiz_attempts.node_id > roadmap_nodes.id [delete: cascade]
+Ref: quiz_attempt_questions.attempt_id > quiz_attempts.id [delete: cascade]
+Ref: quiz_attempt_questions.question_id > quiz_questions.id
+
+// ─────────────────────────── 5. Дерево навичок ───────────────────────────
+
+Table skill_nodes {
+  id uuid [pk]
+  roadmap_id uuid [not null]
+  linked_node_id uuid
+  title text [not null]
+  description text [not null, default: '']
+  skill_points int [not null, default: 1]
+  tier int [not null, default: 0, note: 'підказка для розкладки, не структура']
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (id, roadmap_id) [unique]
+    (roadmap_id, tier)
+  }
+}
+
+Table skill_node_dependencies {
+  id uuid [pk]
+  roadmap_id uuid [not null]
+  skill_node_id uuid [not null]
+  depends_on_skill_node_id uuid [not null]
+
+  Indexes {
+    (skill_node_id, depends_on_skill_node_id) [unique]
+  }
+  Note: 'DAG, а не дерево: вузол може мати кілька передумов.'
+}
+
+Table skill_node_states {
+  user_id uuid [not null]
+  skill_node_id uuid [not null]
+  state text [not null, default: 'locked', note: 'locked | available | unlocked | mastered']
+  unlocked_at timestamptz
+  mastered_at timestamptz
+  updated_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (user_id, skill_node_id) [pk]
+  }
+  Note: 'Кеш обчислюваного стану. Потрібна процедура повного перерахунку.'
+}
+
+Ref: skill_nodes.roadmap_id > roadmaps.id [delete: cascade]
+Ref: skill_nodes.linked_node_id > roadmap_nodes.id [delete: set null]
+Ref: skill_node_dependencies.skill_node_id > skill_nodes.id [delete: cascade]
+Ref: skill_node_dependencies.depends_on_skill_node_id > skill_nodes.id [delete: cascade]
+Ref: skill_node_states.user_id > users.id [delete: cascade]
+Ref: skill_node_states.skill_node_id > skill_nodes.id [delete: cascade]
+
+// ─────────────────────────── 6. Гейміфікація ───────────────────────────
+
+Table achievement_types {
+  code text [pk, note: 'first_quiz, roadmap_completed']
+  title text [not null]
+  description text [not null, default: '']
+  icon_url text
+  points int [not null, default: 0]
+  is_repeatable boolean [not null, default: false]
+  sort_order int [not null, default: 0]
+  is_active boolean [not null, default: true]
+}
+
+Table user_achievements {
+  id uuid [pk]
+  user_id uuid [not null]
+  type_code text [not null]
+  dedup_key text [not null, default: '', note: 'порожній для неповторюваних; roadmap_id для повторюваних']
+  meta jsonb
+  earned_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (user_id, type_code, dedup_key) [unique]
+    (user_id, earned_at)
+  }
+}
+
+Ref: user_achievements.user_id > users.id [delete: cascade]
+Ref: user_achievements.type_code > achievement_types.code
