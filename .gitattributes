@@ -1,0 +1,5 @@
+# Keep Go sources LF in the working tree so gofmt agrees with CI on Windows.
+*.go text eol=lf
+*.sql text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
