@@ -19,10 +19,17 @@ The repository is still in an early stage. The current implementation is a minim
 - cmd/api/main.go — application entrypoint
 - cmd/migrate/main.go — migration runner, a separate binary from the API
 - internal/ — vertical slices (user/register, user/login), domain, adapters, transport
-- pkg/ — shared helpers: httpserver, logger, render
+- internal/transport/httperr — the single error shape the API returns; a package
+  of its own because the slices import it and transport/http imports the slices
+- pkg/ — shared helpers: httpserver, logger, render, hash (argon2id), token (JWT
+  and refresh tokens)
 - config/ — application configuration, composed from adapter configs
 - migrations/ — goose SQL migrations, embedded via embed.FS
-- docs/ — DB schema (db-schema.md), its review, and the dbml diagram
+- docs/ — DB schema (db-schema.md), its review, the dbml diagram, and the API
+  specification (openapi.yaml) embedded into the binary via embed.go
+- Swagger UI is served by the API itself at `/docs`, reading `/api/v1/openapi.yaml`.
+  The spec is hand-written and the code follows it, so update the spec in the same
+  change as the handler — nothing regenerates it.
 - go.mod — Go module definition and version
 - Dockerfile — container build for the API
 - docker-compose.yml — local orchestration: API plus PostgreSQL 16
@@ -53,8 +60,15 @@ go fmt ./...
 Run tests:
 
 ```bash
-go test ./...
+go test ./...          # data-layer tests start a throwaway Postgres via Docker
+go test -short ./...   # skips them, for a machine without a Docker daemon
 ```
+
+Tests that touch the database call `postgres.NewTestDB(t)`. It applies the real
+embedded migrations, starts the container **once per package** and empties every
+table before each test, so tests do not depend on the order they run in. Setting
+`TEST_DATABASE_URL` points the harness at an existing database instead of
+starting a container — that is what CI does with a service container.
 
 Run with Docker (starts PostgreSQL and waits for it to become healthy):
 
@@ -88,14 +102,26 @@ docker build -t planetarium-server .
 
 ## Environment and configuration
 
-`.env.example` is the source of truth for what the code actually reads: `APP_PORT`
-and `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_NAME`. The README still
-mentions `PORT`, `DATABASE_URL` and `OPENAI_API_KEY` — the first two are outdated
-names and the third is not wired up yet.
+`.env.example` is the source of truth for what the code actually reads: `APP_PORT`,
+`DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_NAME`, and
+`JWT_SECRET` / `ACCESS_TTL` / `REFRESH_TTL`. The README still mentions `PORT`,
+`DATABASE_URL` and `OPENAI_API_KEY` — the first two are outdated names and the
+third is not wired up yet.
+
+An unset `JWT_SECRET` falls back to a value published in `config/config.go` and
+logs a warning at startup. That is deliberate — a fresh checkout should run — but
+it means anyone can mint valid access tokens until a real secret is set.
 
 Under docker compose the API reaches the database as host `db`; `.env.example`
 keeps `localhost` because that is the correct value when running the API on the
 host with `go run`.
+
+If a PostgreSQL is already installed on the developer's machine it will own port
+5432, and `localhost` then resolves to it rather than to the container — the
+symptom is `database "planetarium_db" does not exist` against a database that
+plainly exists in Docker. Both sides read `DB_PORT`, so the fix needs no code
+change: `DB_PORT=5433 docker compose up -d db` and the same variable for
+`go run`.
 
 `config.InitConfig` is the single place these variables are read. Both entrypoints
 call it; do not reach for `os.Getenv` elsewhere.
