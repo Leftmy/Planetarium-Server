@@ -24,8 +24,8 @@ To contribute ideas, please open a [GitHub Issue](https://github.com) and use th
 Once the coding phase begins, we will follow a structured **Git Flow** model to keep the codebase stable and clean:
 
 *   `main` — Protected branch. Contains only stable, production-ready, and fully tested code.
-*   `develop` — Main integration branch. All new features and bug fixes are merged here first.
-*   `feature/feature-name` — Branches for new functionality (always created from `develop`).
+*   `dev` — Main integration branch. All new features and bug fixes are merged here first.
+*   `feature/feature-name` — Branches for new functionality (always created from `dev`).
 *   `bugfix/bug-name` — Branches for fixing urgent issues.
 
 ### Commit Message Guidelines (Conventional Commits)
@@ -42,10 +42,10 @@ To keep the project history readable, we enforce the **Conventional Commits** st
 When you are ready to submit code or documentation changes:
 
 1.  **Fork** the repository and clone it locally.
-2.  Create a new branch from `develop`: `git checkout -b feature/your-feature-name`.
+2.  Create a new branch from `dev`: `git checkout -b feature/your-feature-name`.
 3.  Write your code following our coding standards (see below).
 4.  Commit your changes using clear, conventional messages and push them to your fork.
-5.  Open a **Pull Request** targeting the `develop` branch of the main repository.
+5.  Open a **Pull Request** targeting the `dev` branch of the main repository.
 6.  **Describe your PR:** Clearly state what changes were made, why they are necessary, and how to test them. Link any related issues (e.g., `Closes #12`).
 7.  Pass **Code Review**: At least one maintainer must review and `Approve` your PR before it can be merged.
 

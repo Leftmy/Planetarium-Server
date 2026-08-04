@@ -2,9 +2,9 @@ name: CI/CD
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
 
 permissions:
   contents: read
@@ -46,6 +46,27 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
 
+    # The data-layer tests need a real database: mocks do not catch mistakes in
+    # SQL, constraints or transactions, which is most of what can go wrong there.
+    # A service container is used rather than letting testcontainers start one,
+    # so the runner does not pay to pull an image and boot Docker-in-Docker on
+    # every job. The harness picks this up through TEST_DATABASE_URL and falls
+    # back to testcontainers locally.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: planetarium_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -57,6 +78,8 @@ jobs:
           cache: true
 
       - name: Run tests
+        env:
+          TEST_DATABASE_URL: postgres://postgres:secret@localhost:5432/planetarium_test?sslmode=disable
         run: go test -v -race -coverprofile=coverage.out ./...
 
   build:
