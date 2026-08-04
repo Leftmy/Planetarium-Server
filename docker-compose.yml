@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
 
   db:
-    image: postgres:16-alpine
+    image: postgres:16
     container_name: planetarium_db
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
