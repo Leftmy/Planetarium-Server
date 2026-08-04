@@ -16,9 +16,19 @@ type Config struct {
 	Host     string `env:"DB_HOST"`
 	Port     uint   `env:"DB_PORT"`
 	Name     string `env:"DB_NAME"`
+
+	// url, when non-empty, is used verbatim instead of composing the fields
+	// above. It is unexported so only this package can set it: the test harness
+	// receives a ready DSN from testcontainers and would otherwise have to take
+	// it apart just to have BuildURL put it back together.
+	url string
 }
 
 func (c *Config) BuildURL() string {
+	if c.url != "" {
+		return c.url
+	}
+
 	return fmt.Sprintf(
 		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		c.User, c.Password, c.Host, c.Port, c.Name,
